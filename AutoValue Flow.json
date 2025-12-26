@@ -1,0 +1,401 @@
+{
+  "name": "AutoValue Flow",
+  "nodes": [
+    {
+      "parameters": {
+        "formTitle": "AutoValue Form",
+        "formDescription": "AutoValue form description",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Enter your email address",
+              "fieldType": "email",
+              "placeholder": "email address"
+            },
+            {
+              "fieldLabel": "Vehicle number",
+              "placeholder": "VIN number",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Car Model",
+              "placeholder": "Car model name like (Kia Carnival)",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "VIN numberplate photo",
+              "fieldType": "file",
+              "acceptFileTypes": ".jpg,.png,.jpeg",
+              "requiredField": true
+            }
+          ]
+        },
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.3,
+      "position": [
+        -368,
+        0
+      ],
+      "id": "108bee8e-2110-44a5-8294-7aa58e218cd9",
+      "name": "On form submission",
+      "webhookId": "cab73bdc-db41-4191-bad5-a79099ac5159"
+    },
+    {
+      "parameters": {
+        "chatId": "5305968983",
+        "text": "={{ $json.message }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1312,
+        0
+      ],
+      "id": "5d63fe01-132f-4576-b569-b7c2e6a9e4d6",
+      "name": "Send a text message",
+      "webhookId": "50162375-913d-4e17-bec6-49cad9196d28",
+      "credentials": {
+        "telegramApi": {
+          "id": "ipB8IEo3Fw5ST7DM",
+          "name": "Telegram account 4"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "image",
+        "operation": "analyze",
+        "modelId": {
+          "__rl": true,
+          "value": "models/gemini-2.5-flash",
+          "mode": "list",
+          "cachedResultName": "models/gemini-2.5-flash"
+        },
+        "text": "=You are an OCR system.\nUser Input: {{ $json['Vehicle number'] }}\nImage: [Attached Image]\n\nINSTRUCTIONS:\n1. Extract the vehicle number from the image (ignore \"IND\" or small text).\n2. Remove spaces/dashes and convert to Uppercase (e.g., \"GJ01XX1234\").\n3. Compare the extracted number with the User Input (also normalized).\n\nOUTPUT RULES (Strictly output ONLY one of these three lines):\n\n1. IF MATCH FOUND:\n   [Output ONLY the vehicle number, e.g. GJ01XX1234]\n\n2. IF NUMBER FOUND BUT DOES NOT MATCH USER INPUT:\n   vehicle number not match with image\n\n3. IF NO NUMBER FOUND IN IMAGE:\n   no vehicle number found in image",
+        "inputType": "binary",
+        "binaryPropertyName": "=VIN_numberplate_photo\n",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1,
+      "position": [
+        -144,
+        0
+      ],
+      "id": "741cb98e-7b2d-4e48-a470-6b6b7b3f80d7",
+      "name": "Analyze an image",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "7erK86GLRd4m7OAq",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "=You are an RTO Verification Officer. Your task is to validate vehicle data and generate a text-only status report.\n\nINPUT DATA:\n- User Input: {{ $('On form submission').item.json['Vehicle number'] }}\n- Owner Details: {{ $json.owner_info.name }}, {{ $json.owner_info.mobile }}, {{ $json.owner_info.address }}\n- Vehicle Specs: {{ $json.vehicle_specs.maker }} {{ $json.vehicle_specs.model }}, {{ $json.vehicle_specs.fuel }}, {{ $json.vehicle_specs.year }}, Chassis: {{ $json.vehicle_specs.chassis }}\n- Legal Status: Reg {{ $json.legal_status.reg_number }}, Active: {{ $json.legal_status.is_active }}, Insurance: {{ $json.legal_status.insurance_expiry }}, Fitness: {{ $json.legal_status.fitness_expiry }}, Finance: {{ $json.legal_status.financed_by }}\n- Today's Date: {{ $now.toFormat('dd-MMM-yyyy') }}\n\nINSTRUCTIONS:\n\n1. Security Check (Critical):\n   - Compare \"User Input\" against \"Reg {{ $json.legal_status.reg_number }}\" (ignoring spaces and casing).\n   - If they do NOT match, output exactly: \"CRITICAL ERROR: Registration mismatch.\" and stop immediately.\n\n2. Compliance Analysis:\n   - Check if Insurance date is in the past compared to Today.\n   - Check if Fitness date is in the past compared to Today.\n\n3. Output Generation:\n   - Generate the report exactly in the format below.\n   - Do not use emojis, symbols, or markdown bolding (**).\n   - If a date is in the past, append \"- EXPIRED\" next to it.\n   - If \"Finance\" is not \"None\", display the bank name.\n\nOUTPUT FORMAT:\n\nVehicle Verification Report\nStatus: [Verified / Issues Found]\n\nVehicle: [Reg Number]\nMake/Model: [Maker] [Model] ([Year])\nOwner: [Name], [Mobile]\nFinanced: [financed_by value]\n\nValidity (as of {{ $now.toFormat('dd-MMM-yyyy') }}):\nRC Status: [is_active value]\nInsurance: [Date] - [Valid / EXPIRED]\nFitness: [Date] - [Valid / EXPIRED]\n\nAddress: [Address value]"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [
+        768,
+        0
+      ],
+      "id": "3230ffc4-b16e-4d7e-96d9-a37d3e5f41f7",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "model": "qwen/qwen3-32b",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [
+        720,
+        304
+      ],
+      "id": "93c37383-56e2-4fe4-b566-e362722ba386",
+      "name": "Groq Chat Model",
+      "credentials": {
+        "groqApi": {
+          "id": "xjeOYlL2cbn8Kaja",
+          "name": "Groq account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "112081aa-5585-46de-adf0-2b8bc79eb913",
+              "leftValue": "={{ $json.content.parts[0].text }}",
+              "rightValue": "={{ $('On form submission').item.json['Vehicle number'] }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        48,
+        16
+      ],
+      "id": "d3afbde6-c3fe-4c56-9f21-af2c90d26c6b",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://rto-vehicle-information-verification-india2.p.rapidapi.com/api/v1/private/rc-advance",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-rapidapi-host",
+              "value": "rto-vehicle-information-verification-india2.p.rapidapi.com"
+            },
+            {
+              "name": "x-rapidapi-key",
+              "value": "use your rapid-api-key"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "reg_no",
+              "value": "={{ $('On form submission').item.json['Vehicle number'] }}"
+            },
+            {
+              "name": "consent",
+              "value": "yes"
+            },
+            {
+              "name": "consent_text",
+              "value": "I hear by declare my consent agreement for fetching my information via Foxtail Kyc API"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        320,
+        0
+      ],
+      "id": "fe0e5610-14ad-464a-b6a4-aeb4fb7e34e0",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "jsCode": "\n\nconst rawData = items[0].json; // Or however you access your input\n\n// 2. Safety Check: Ensure the result exists\nconst v = rawData.result || {}; \nconst ins = v.vehicle_insurance_details || {};\nconst fin = v.financer_details || {};\n\n// 3. Construct the exact output format\nconst formattedOutput = {\n  \"owner_info\": {\n    \"name\": v.owner_name || \"N/A\",\n    \"mobile\": v.mobile_no ? String(v.mobile_no) : \"N/A\",\n    // Matches your example format: \"City-Pincode\"\n    \"address\": (v.current_district_name || v.current_state_name || \"Unknown\") + \"-\" + (v.current_pincode || \"\")\n  },\n  \"vehicle_specs\": {\n    \"model\": v.model || \"N/A\",\n    \"maker\": v.vehicle_manufacturer_name || \"N/A\",\n    \"fuel\": v.fuel_descr || \"N/A\",\n    \"year\": v.manufacturing_yr || null,\n    \"chassis\": v.chassis_no || \"N/A\"\n  },\n  \"legal_status\": {\n    \"reg_number\": v.reg_no || \"N/A\",\n    \"is_active\": v.status || \"Unknown\",\n    \"insurance_expiry\": ins.insurance_upto || \"N/A\",\n    \"fitness_expiry\": v.fit_upto || \"N/A\",\n    \"financed_by\": fin.financer_name || \"None\"\n  }\n};\n\n// 4. Return the data\nreturn formattedOutput;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        560,
+        0
+      ],
+      "id": "09d33936-6a05-490c-90dd-2f233b0cd1b9",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "jsonSchemaExample": "{\n  \"report_summary\": {\n    \"overall_status\": \"Issues Found\",\n    \"audit_date\": \"26-Dec-2025\"\n  },\n  \"vehicle_identity\": {\n    \"plate\": \"GJ01JT0459\",\n    \"make_model\": \"MARUTI SUZUKI INDIA LTD TOUR S CNG\",\n    \"year\": 2020,\n    \"owner_name\": \"JAGDISHKUMAR MANUBHAI RABARI\",\n    \"owner_mobile\": \"9428109709\",\n    \"finance_info\": \"DENA BANK\"\n  },\n  \"compliance_status\": {\n    \"rc_status\": \"ACTIVE\",\n    \"insurance\": {\n      \"expiry_date\": \"2024-01-29\",\n      \"is_valid\": false,\n      \"status_text\": \"EXPIRED\"\n    },\n    \"fitness\": {\n      \"expiry_date\": \"2025-03-27\",\n      \"is_valid\": false,\n      \"status_text\": \"EXPIRED\"\n    }\n  },\n  \"registered_address\": \"Ahmedabad-380016\"\n}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        960,
+        288
+      ],
+      "id": "2c97330f-c2e5-4da7-af03-5b574eae3ba2",
+      "name": "Structured Output Parser"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 1. Get the data from the previous node\nconst jsonData = $input.first().json.output;\n\n// 2. Define shortcuts for cleaner code\nconst v = jsonData.vehicle_identity;\nconst c = jsonData.compliance_status;\nconst s = jsonData.report_summary;\n\n// --- LOGIC: FIX UGLY DATA ---\n\n// Fix 1: Clean Address (If \"Unknown\", show Pincode instead)\nlet cleanAddress = jsonData.registered_address;\nif (cleanAddress.startsWith(\"Unknown\") || cleanAddress.trim() === \"\") {\n   const pincode = v.owner_address_pincode || \"N/A\"; // Adjust key if needed based on your API\n   cleanAddress = `Pincode: ${pincode}`;\n}\n\n// Fix 2: Clean Model Name (Remove duplicate \"Maruti\")\n// Example: \"MARUTI SUZUKI INDIA LTD MARUTI CIAZ\" -> \"CIAZ\"\nlet cleanModel = v.make_model.replace(\"MARUTI SUZUKI INDIA LTD\", \"\").trim();\ncleanModel = cleanModel.replace(/^MARUTI\\s+/i, \"\"); // Removes \"Maruti\" if it starts the string\n\n// Fix 3: Compliance Icons\nconst insIcon = c.insurance.is_valid ? \"✅\" : \"❌\";\nconst fitIcon = c.fitness.is_valid ? \"✅\" : \"❌\";\n\n// --- BUILD THE TELEGRAM MESSAGE ---\n\nconst telegramMessage = `\n🚨 *RTO VERIFICATION ALERT*\n*Status:* ${s.overall_status}\n*Date:* ${s.audit_date}\n\n👤 *Owner Details*\nName: ${v.owner_name}\nMobile: \\`${v.owner_mobile}\\`\nAddress: ${cleanAddress}\n\n🚗 *Vehicle Details*\nPlate: *${v.plate}*\nModel: ${cleanModel} (${v.year})\nFinanced: ${v.finance_info}\n\n📋 *Compliance Check*\n• RC Status: ${c.rc_status}\n• Insurance: ${c.insurance.expiry_date} (${c.insurance.status_text}) ${insIcon}\n• Fitness: ${c.fitness.expiry_date} (${c.fitness.status_text}) ${fitIcon}\n`;\n\n// 4. Return the result\nreturn { message: telegramMessage };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1104,
+        0
+      ],
+      "id": "173ded55-b958-4593-85ab-2d6ea5aae998",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('On form submission').item.json['Enter your email address'] }}",
+        "subject": "Vehicle number not matching with image",
+        "message": "={{ $('Analyze an image').item.json.content.parts[0].text }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        208,
+        304
+      ],
+      "id": "2d586716-89a3-43d6-a1b6-b3349ca3dd38",
+      "name": "Send a message",
+      "webhookId": "cf78d0c4-eb29-40d6-9b9a-308efdf88c18",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "p1diufFx04Ka5N6E",
+          "name": "Gmail account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "On form submission": {
+      "main": [
+        [
+          {
+            "node": "Analyze an image",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyze an image": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send a message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "Send a text message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "eaabc6b8-c071-4d6a-a41b-58d40addb28e",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "48fa00ac06dbcb39bfe442249189c4c0e47d3199d817bdd2bf41e99ec44e12da"
+  },
+  "id": "9yKuhozQzPIEeBgS",
+  "tags": []
+}
