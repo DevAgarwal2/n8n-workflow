@@ -1,0 +1,568 @@
+{
+  "name": "Brand Reputation worflow",
+  "nodes": [
+    {
+      "parameters": {
+        "query": "=site:linkedin.com/posts OR site:linkedin.com/pulse \"{{ $json['Brand Name'] }}\" after:{{ $json.submittedAt.toDateTime().format('yyyy-MM-dd') }}",
+        "additionalFields": {
+          "endPublishedDate": "={{ $json.submittedAt }}"
+        },
+        "contentsOptions": {
+          "summary": true
+        },
+        "requestOptions": {}
+      },
+      "type": "n8n-nodes-exa-official.exa",
+      "typeVersion": 1,
+      "position": [
+        -32,
+        -128
+      ],
+      "id": "436af469-d1e7-49b1-bb92-9f0139d507cf",
+      "name": "Search the web",
+      "credentials": {
+        "exaApi": {
+          "id": "0TdIt7xK9NaM6EmF",
+          "name": "Exa account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.exa.ai/search",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "use-your-api-key"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"query\": \"{{ $json['Brand Name'] }}\",\n  \"category\": \"tweet\",\n  \"numResults\": 10,\n  \"type\": \"auto\",\n  \"contents\": {\n    \"text\": true\n  }\n} ",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -48,
+        64
+      ],
+      "id": "a7d2e1cc-f8c3-4e44-83d1-af3cc3b837fd",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "url": "=https://news.google.com/rss/search?q={{ $json['Brand Name'] }}+when:24h ",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1.2,
+      "position": [
+        -48,
+        256
+      ],
+      "id": "ae972b65-7526-4d64-a824-7b03ea056135",
+      "name": "RSS Read"
+    },
+    {
+      "parameters": {
+        "numberInputs": 3
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        400,
+        -112
+      ],
+      "id": "eec3d943-f73d-4a35-a448-48c9fcc4a94e",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        688,
+        -96
+      ],
+      "id": "9f2815f0-6921-4793-8878-98f31710df5d",
+      "name": "Aggregate"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Analyze this content:\nID: {{ $json.id }}\nPLATFORM: {{ $json.platformName }}\nTITLE: {{ $json.title }}\nLINK: {{ $json.link }}\nCONTENT: {{ $json.description }}",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "=You are a Crisis Analysis API. You receive social media data and output a JSON summary.\n\n RULESET\n1. Output ONLY valid JSON.\n2. Do NOT use markdown code blocks (no ```json).\n3. Do NOT add conversational text.\n4. Start response with \"{\" and end with \"}\".\n\n JSON OUTPUT SCHEMA\n{\n  \"overall_sentiment\": \"Neutral\",\n  \"threat_level\": \"Integer (1-10)\",\n  \"executive_brief\": \"String (3 sentences max summary of the day)\",\n  \"critical_alerts\": [\n    {\n      \"platform\": \"String\",\n      \"risk_reason\": \"String (Why is this dangerous?)\",\n      \"link\": \"String (URL)\"\n    }\n  ]\n}\nPls answer  in required format only\n LOGIC\n- If \"threat_level\" < 5, \"critical_alerts\" must be [].\n- \"threat_level\" 10 = Lawsuits, physical safety, scams, or viral hate.\n- \"threat_level\" 1 = General noise, spam, or positive news."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [
+        1136,
+        224
+      ],
+      "id": "21e94286-cb28-44ff-a01a-492ee4c66a6b",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "jsonSchemaExample": "{\n  \"overall_sentiment\": \"Neutral\" ,\n  \"threat_level\": \"Integer (1-10)\",\n  \"executive_brief\": \"String (3 sentences max summary of the day)\",\n  \"critical_alerts\": [\n    {\n      \"platform\": \"String\",\n      \"risk_reason\": \"String (Why is this dangerous?)\",\n      \"link\": \"String (URL)\"\n    }\n  ]\n}",
+        "autoFix": true
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        1360,
+        448
+      ],
+      "id": "f6c25f95-2c01-41eb-a7b4-98ce50ea1f55",
+      "name": "Structured Output Parser"
+    },
+    {
+      "parameters": {
+        "chatId": "5305968983",
+        "text": "=🚨 *DAILY INTEL REPORT*\n**Status:** {{ $json.output.day_status == 'CRITICAL' ? '🔴' : $json.output.day_status == 'WARNING' ? '🟡' : '🟢' }} {{ $json.output.day_status }}\n\n**{{ $json.output.headline }}**\n\n{{ $json.output.summary }}\n\n————————————\n🔗 *EVIDENCE:*\n{{ $json.output.citations.map(c => \"• [\" + c.label + \"](\" + c.url + \")\").join(\"\\n\") }}\n\n👇 *ACTION:*\n`{{ $json.output.action_item }}`",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1872,
+        -144
+      ],
+      "id": "20c65d31-d25a-4a01-857e-b603d06b68e3",
+      "name": "Send a text message",
+      "webhookId": "12791542-ddf5-449d-a3b1-f1d42a40ce04",
+      "credentials": {
+        "telegramApi": {
+          "id": "YVRYbPS93wU48HjC",
+          "name": "Telegram account 6"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1536,
+        224
+      ],
+      "id": "bab6f142-8d72-448f-b09d-c26ec1f38dbc",
+      "name": "Wait",
+      "webhookId": "9e036dee-8605-4546-8324-e9cb2fd0c3f6"
+    },
+    {
+      "parameters": {
+        "batchSize": 3,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        864,
+        208
+      ],
+      "id": "90c3fd83-8192-4b34-9c9f-53461afa04d1",
+      "name": "Loop Over Items"
+    },
+    {
+      "parameters": {
+        "model": "xiaomi/mimo-v2-flash:free",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        1056,
+        480
+      ],
+      "id": "eb1aa90a-e161-476b-83f3-944b7d9ffd32",
+      "name": "OpenRouter Chat Model",
+      "credentials": {
+        "openRouterApi": {
+          "id": "SLsXj6b5wUQF0JC3",
+          "name": "OpenRouter account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": "qwen/qwen3-32b",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [
+        1296,
+        608
+      ],
+      "id": "b6018da2-29bb-460c-9ceb-fc97873313e0",
+      "name": "Groq Chat Model",
+      "credentials": {
+        "groqApi": {
+          "id": "xjeOYlL2cbn8Kaja",
+          "name": "Groq account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.daily_log }}",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "=You are the Chief Editor. Write a Daily Crisis Report.\n\nRULES:\n1. \"One Drop of Poison\": If Threat Level >= 7, the status is CRITICAL.\n2. CITATIONS ARE MANDATORY: You must include the source URL for any specific threat you mention.\n\nINPUT DATA:\n{{ $json.daily_log }}\n\nOUTPUT JSON FORMAT:\n{\n  \"day_status\": \"SAFE or WARNING or CRITICAL\",\n  \"headline\": \"Punchy 5-10 word title\",\n  \"summary\": \"2-3 sentence summary of the situation.\",\n  \"action_item\": \"One clear recommendation.\",\n  \"citations\": [\n    {\n      \"label\": \"Short label (e.g. 'California Lawsuit')\",\n      \"url\": \"The http link from the input log\"\n    }\n  ]\n}"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [
+        1392,
+        -144
+      ],
+      "id": "9554e11b-5185-4227-be1f-d89365a00931",
+      "name": "AI Agent1"
+    },
+    {
+      "parameters": {
+        "model": "moonshotai/kimi-k2-instruct-0905",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [
+        1360,
+        64
+      ],
+      "id": "6c6343f8-7997-4e95-ab04-555ed9c9a5bf",
+      "name": "Groq Chat Model1",
+      "credentials": {
+        "groqApi": {
+          "id": "xjeOYlL2cbn8Kaja",
+          "name": "Groq account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsonSchemaExample": "{\n  \"day_status\": \"SAFE or WARNING or CRITICAL\",\n  \"headline\": \"Punchy 5-10 word title\",\n  \"summary\": \"2-3 sentence summary of the situation.\",\n  \"action_item\": \"One clear recommendation.\",\n  \"citations\": [\n    {\n      \"label\": \"Short label (e.g. 'California Lawsuit')\",\n      \"url\": \"The http link from the input log\"\n    }\n  ]\n}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        1568,
+        48
+      ],
+      "id": "fe774aa0-d74f-41c7-9539-23338fb64a02",
+      "name": "Structured Output Parser1"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 1. Get all items from the RSS Read node\nconst items = $input.all();\n\n// 2. Slice the array to keep only the first 10\nconst topTen = items.slice(0, 10);\n\n// 3. Map the data to a clean format (Removes HTML, guid, etc.)\nconst cleanedItems = topTen.map(item => {\n  return {\n    json: {\n      source: \"News\",\n      title: item.json.title,\n      link: item.json.link,\n      date: item.json.pubDate,\n      // Use contentSnippet if it exists, otherwise fallback to title\n      content: item.json.contentSnippet || item.json.title\n    }\n  }\n});\n\nreturn cleanedItems;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        208,
+        256
+      ],
+      "id": "939583b9-ec78-414c-9e61-23c9c4030627",
+      "name": "sorting to get best articles"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 1. Get the input data (Handles if it's inside a 'data' key or a flat list)\nconst inputItems = $input.first().json.data || $input.all().map(i => i.json);\n\nlet formattedList = [];\n\n// 2. Loop through every item in the mix\nfor (const item of inputItems) {\n  \n  // --- CASE A: It is an Exa.ai Result (Has a 'results' array) ---\n  if (item.results && Array.isArray(item.results)) {\n    \n    for (const result of item.results) {\n      // Determine Platform based on URL\n      let platform = \"Web\";\n      const url = result.url || result.link || \"\";\n      \n      if (url.includes(\"reddit.com\")) platform = \"Reddit\";\n      else if (url.includes(\"linkedin.com\")) platform = \"LinkedIn\";\n      else if (url.includes(\"x.com\") || url.includes(\"twitter.com\")) platform = \"X (Twitter)\";\n\n      formattedList.push({\n        id: result.id || url,\n        platformName: platform,\n        title: result.title || \"No Title\",\n        link: url,\n        // Exa uses 'text' for content, sometimes 'summary'\n        description: result.text || result.summary || \"\"\n      });\n    }\n\n  // --- CASE B: It is a News Item (Has 'source': 'News' or 'content') ---\n  } else if (item.source === \"News\" || item.content) {\n    \n    formattedList.push({\n      id: item.link || item.guid || \"news_id\", // Fallback ID\n      platformName: \"News\",\n      title: item.title,\n      link: item.link,\n      // RSS usually has 'content' or 'contentSnippet'\n      description: item.content || item.description || \"\"\n    });\n  }\n}\n\n// 3. Return the clean, unified list for the AI Agent\nreturn formattedList.map(item => ({ json: item }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        592,
+        256
+      ],
+      "id": "49afbf7c-72aa-4c97-9cce-ffe0a59867e8",
+      "name": "formatting the data"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nlet dailyLog = \"\";\nlet criticalCount = 0;\n\nfor (const item of items) {\n  const data = item.json.output || item.json;\n  \n  // 1. Extract Links if they exist\n  let proofLink = \"\";\n  if (data.critical_alerts && data.critical_alerts.length > 0) {\n    proofLink = `(Proof: ${data.critical_alerts[0].link})`;\n  } else if (data.link) {\n    // Backup: If your previous node saved the link in the root\n    proofLink = `(Proof: ${data.link})`;\n  }\n\n  // 2. Build the Log Entry with the Link\n  if (data.threat_level > 1) {\n    dailyLog += `- [Threat: ${data.threat_level}] ${data.executive_brief} ${proofLink}\\n`;\n  }\n  \n  if (data.threat_level >= 7) criticalCount++;\n}\n\nif (dailyLog === \"\") dailyLog = \"No notable activity.\";\n\nreturn {\n  json: {\n    daily_log: dailyLog,\n    critical_count: criticalCount\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1104,
+        32
+      ],
+      "id": "62be6536-e509-43af-a55e-9d393c9be3ca",
+      "name": "calculating overall score"
+    },
+    {
+      "parameters": {
+        "formTitle": "Brand PR form",
+        "formDescription": "Brand PR form registration",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Brand Name"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.3,
+      "position": [
+        -336,
+        64
+      ],
+      "id": "bccd7d78-7671-465a-b4c4-e98e2b698824",
+      "name": "On form submission",
+      "webhookId": "b11fa3c0-148c-472d-b9d1-3c1da175ef70"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "RSS Read": {
+      "main": [
+        [
+          {
+            "node": "sorting to get best articles",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search the web": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Aggregate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate": {
+      "main": [
+        [
+          {
+            "node": "formatting the data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send a text message": {
+      "main": [
+        []
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [
+          {
+            "node": "calculating overall score",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenRouter Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Structured Output Parser",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent1": {
+      "main": [
+        [
+          {
+            "node": "Send a text message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Chat Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent1",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser1": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "AI Agent1",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "sorting to get best articles": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "formatting the data": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "calculating overall score": {
+      "main": [
+        [
+          {
+            "node": "AI Agent1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "On form submission": {
+      "main": [
+        [
+          {
+            "node": "Search the web",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "RSS Read",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "d75b039c-1c83-4665-afdd-17cc43469a16",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "48fa00ac06dbcb39bfe442249189c4c0e47d3199d817bdd2bf41e99ec44e12da"
+  },
+  "id": "DPksVPqDVhKl7GJJ",
+  "tags": []
+}
